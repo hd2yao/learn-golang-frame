@@ -55,3 +55,16 @@ func NewTimingPool(size, expiry int) (*Pool, error) {
     p.monitorAndClear()
     return p, nil
 }
+
+// Submit 提交任务到 pool
+func (p *Pool) Submit(task f) error {
+    // 判断当前 pool 是否已被关闭
+    if len(p.release) > 0 {
+        return ErrPoolClosed
+    }
+
+    // 获取 pool 一个可用的 worker，绑定 task 执行
+    w := p.getWorker()
+    w.task <- task
+    return nil
+}
