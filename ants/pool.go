@@ -2,6 +2,7 @@ package ants
 
 import (
     "sync"
+    "sync/atomic"
     "time"
 )
 
@@ -129,4 +130,21 @@ func (p *Pool) putWorker(worker *Worker) {
     p.lock.Lock()
     p.workers = append(p.workers, worker)
     p.lock.Unlock()
+}
+
+// ReSize 动态扩容或缩小池容量
+func (p *Pool) ReSize(size int) {
+    if size == p.Cap() {
+        return
+    }
+    // 使用原子操作更新池容量
+    atomic.StoreInt32(&p.capacity, int32(size))
+    diff := p.Running() - size
+    // 差值大于 0 表示需要关闭一些 worker
+    if diff > 0 {
+        for i := 0; i < diff; i++ {
+            // 向 task 通道发送 nil，表示该 worker 应该停止工作
+            p.getWorker().task <- nil
+        }
+    }
 }
