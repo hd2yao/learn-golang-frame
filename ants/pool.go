@@ -68,3 +68,56 @@ func (p *Pool) Submit(task f) error {
     w.task <- task
     return nil
 }
+
+// getWorker 返回一个可用的 worker 来执行 task
+func (p *Pool) getWorker() *Worker {
+    var w *Worker
+    // 标志变量，判断当前正在运行的 worker 数量是否已到达 pool 的容量上限
+    waiting := false
+
+    // 加锁，检测队列中是否有可用的 worker，并进行相应操作
+    p.lock.Lock()
+    idleWorkers := p.workers
+    n := len(idleWorkers) - 1
+    // 当前队列中无可用 worker
+    if n < 0 {
+        // 判断运行 worker 数目已达到该 Pool 的容量上限，置等待标志
+        waiting = p.Running() >= p.Cap()
+    } else {
+        // 当前队列有可用 worker，从队列尾部取出一个使用
+        w = idleWorkers[n]
+        idleWorkers[n] = nil
+        p.workers = idleWorkers[:n]
+    }
+    // 检测完成，解锁
+    p.lock.Unlock()
+
+    // Pool 容量已满，新请求等待
+    if waiting {
+        // 利用锁阻塞等待直到有空闲 worker
+        for {
+            p.lock.Lock()
+            idleWorkers = p.workers
+            l := len(idleWorkers) - 1
+            if l < 0 {
+                p.lock.Unlock()
+                continue
+            }
+            w = idleWorkers[l]
+            idleWorkers[l] = nil
+            p.workers = idleWorkers[:l]
+            p.lock.Unlock()
+            break
+        }
+    } else if w == nil {
+        // 当前无空闲 worker 但是 Pool 还没有满，则可以直接断开一个 worker 执行任务
+        w = &Worker{
+            pool: p,
+            task: make(chan f, 1),
+        }
+        w.run()
+        // 运行 worker 数加一
+        p.incRunning()
+    }
+    return w
+}
