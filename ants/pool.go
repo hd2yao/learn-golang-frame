@@ -121,3 +121,12 @@ func (p *Pool) getWorker() *Worker {
     }
     return w
 }
+
+// putWorker 将 worker 放回空闲 Pool 中，goroutine 复用
+func (p *Pool) putWorker(worker *Worker) {
+    // 写入回收时间，亦即该 worker 的最后一次结束运行的时间
+    worker.recycleTime = time.Now()
+    p.lock.Lock()
+    p.workers = append(p.workers, worker)
+    p.lock.Unlock()
+}
