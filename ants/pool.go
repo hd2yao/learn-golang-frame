@@ -148,3 +148,33 @@ func (p *Pool) ReSize(size int) {
         }
     }
 }
+
+// periodicallyPurge 定期清理过期 Worker
+func (p *Pool) periodicallyPurge() {
+    heartbeat := time.NewTicker(p.expiryDuration)
+    for range heartbeat.C {
+        currentTime := time.Now()
+        p.lock.Lock()
+        idleWorkers := p.workers
+        if len(idleWorkers) == 0 && p.Running() == 0 && len(p.release) > 0 {
+            p.lock.Unlock()
+            return
+        }
+        n := 0
+        for i, worker := range idleWorkers {
+            if currentTime.Sub(worker.recycleTime) <= p.expiryDuration {
+                break
+            }
+            n = i
+            worker.task <- nil
+            idleWorkers[i] = nil
+        }
+        n++
+        if n >= len(idleWorkers) {
+            p.workers = idleWorkers[:0]
+        } else {
+            p.workers = idleWorkers[n:]
+        }
+        p.lock.Unlock()
+    }
+}
